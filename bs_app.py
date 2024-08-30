@@ -1,44 +1,58 @@
-# import streamlit as st
-# import numpy as np
-# import math
+import streamlit as st
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from tensorflow.keras.models import load_model
+from matplotlib.colors import LinearSegmentedColormap
 
-# # Cumulative distribution function for the standard normal distribution
-# def norm_cdf(x):
-#     return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
+# Load the trained model
+model = load_model('options_pricing_model.h5')
 
-# st.title('Black-Scholes Options Price Calculator for European Call and Put Options')
+# Streamlit inputs for the parameters
+st.title("Option Price Prediction Heatmap")
+st.write("Use the sliders below to adjust the input parameters for the heatmap.")
 
-# st.write('This app calculates the price of European call and put options using the Black-Scholes formula.')
-# st.write('The Black-Scholes formula is given by:')
-# st.latex(r'''C(S, K, r, \sigma, T) = S \cdot N(d_1) - K \cdot e^{-rT} \cdot N(d_2)''')
-# st.latex(r'''P(S, K, r, \sigma, T) = K \cdot e^{-rT} \cdot N(-d_2) - S \cdot N(-d_1)''')
-# st.write('Where:')
-# st.latex(r'''d_1 = \frac{ln(S/K) + (r + \sigma^2 / 2)T}{\sigma \sqrt{T}}''')
-# st.latex(r'''d_2 = d_1 - \sigma \sqrt{T}''')
-# st.write('Here,')
-# st.latex(r'''S = \text{Current stock price}''')
-# st.latex(r'''K = \text{Option strike price}''')
-# st.latex(r'''r = \text{Risk-free interest rate}''')
-# st.latex(r'''\sigma = \text{Stock price volatility}''')
-# st.latex(r'''T = \text{Time to expiration}''')
-# st.write('The cumulative distribution function of the standard normal distribution is denoted by $N(x)$.')
+S_min = st.slider("Minimum Stock Price", 50, 150, 50)
+S_max = st.slider("Maximum Stock Price", 50, 150, 150)
+sigma_min = st.slider("Minimum Volatility (sigma)", 0.1, 0.5, 0.1)
+sigma_max = st.slider("Maximum Volatility (sigma)", 0.1, 0.5, 0.5)
+K = st.number_input("Strike Price (K)", value=100)
+r = st.number_input("Risk-free rate (r)", value=0.03)
+T = st.number_input("Time to maturity (T)", value=1.0)
 
-# # Variables
-# S = st.number_input("Current Stock Price")
-# K = st.number_input("Strike Price", min_value=0.0001)
-# r = st.number_input("Risk-free rate")
-# T = st.number_input("Time to maturity")
-# sigma = st.number_input("Volatility")
+# Define ranges for stock price (S) and volatility (sigma) for a 10x10 grid
+S_range = np.linspace(S_min, S_max, 10)
+sigma_range = np.linspace(sigma_min, sigma_max, 10)
 
-# # Calculate d1 and d2
-# d1 = (np.log(S/K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-# d2 = d1 - sigma * np.sqrt(T)
+# Generate a meshgrid for S and sigma
+S_grid, sigma_grid = np.meshgrid(S_range, sigma_range)
 
-# # Call Option
-# C = S * norm_cdf(d1) - K * np.exp(-r * T) * norm_cdf(d2)
-# # Put Option
-# P = K * np.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
+# Flatten the grids to create input data
+S_flat = S_grid.flatten()
+sigma_flat = sigma_grid.flatten()
 
-# # Print the results
-# st.write("Call Option Price: $", round(C, 2))
-# st.write("Put Option Price: $", round(P, 2))
+# Prepare the input data for prediction
+input_data = np.column_stack((S_flat, np.full_like(S_flat, K), np.full_like(S_flat, r), sigma_flat, np.full_like(S_flat, T)))
+
+# Predict all prices at once
+predicted_prices = model.predict(input_data)
+
+# Reshape the predictions back to the 10x10 grid shape
+price_grid = predicted_prices.reshape(10, 10)
+# Clip negative values to zero
+price_grid = np.clip(price_grid, a_min=0, a_max=None)
+
+# Custom color map from green to red
+cmap = LinearSegmentedColormap.from_list("risk_cmap", ["green", "yellow", "red"])
+
+# Plot the heatmap with annotations
+plt.figure(figsize=(8, 8))
+sns.heatmap(price_grid, annot=True, fmt=".2f", cmap=cmap, linewidths=0.5, linecolor='black',
+            xticklabels=np.round(S_range, 2), yticklabels=np.round(sigma_range, 2), cbar_kws={'label': 'Option Price'})
+
+plt.xlabel('Stock Price (S)')
+plt.ylabel('Volatility (sigma)')
+plt.title('Option Price Prediction Heatmap')
+
+# Display the heatmap in Streamlit
+st.pyplot(plt)
